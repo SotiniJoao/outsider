@@ -1,3 +1,7 @@
+<div align="center">
+  <img src="assets/outsider.png" alt="The Outsider inspecting AI-generated code in the Void" width="100%" />
+</div>
+
 # outsider
 
 A blind, adversarial reviewer for your branch. A model that never saw the ticket, the spec or the commit messages
