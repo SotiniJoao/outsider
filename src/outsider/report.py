@@ -31,6 +31,8 @@ def markdown(rep: dict, code: int) -> str:
         lines += [f"- `{s['path']}` line {s['line']}: {s['kind']}" for s in a.get("secrets", [])]
         if a.get("detail"):
             lines.append(f"- {a['detail']}")
+    if m.get("over_budget_usd"):
+        lines.append(f"Spent over the cap by US$ {m['over_budget_usd']:.2f}: the last call cost more than reserved.")
     if m["incomplete"]:
         lines += ["", "**Incomplete:** " + "; ".join(m["incomplete"])]
     if m["dropped"]:

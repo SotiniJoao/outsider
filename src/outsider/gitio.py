@@ -21,14 +21,19 @@ class GitError(RuntimeError):
 
 
 def executable(name: str, root: Path) -> str:
-    """Absolute path of a program, refused when it lives inside the reviewed repo (Windows searches cwd first)."""
-    found = shutil.which(name)
+    """Absolute path of a program, refused at the repo root: Windows looks in the cwd before PATH.
+
+    The path is not resolved: a venv's `python` is a symlink, and following it would drop the venv.
+    """
+    # Relative PATH entries (`.`, `bin`, empty) resolve against the cwd, which may be inside the reviewed repo.
+    absolute = os.pathsep.join(e for e in os.environ.get("PATH", "").split(os.pathsep) if e and os.path.isabs(e))
+    found = shutil.which(name, path=absolute)
     if not found:
         raise GitError(f"not found on PATH: {name!r}")
-    resolved = Path(found).resolve()
-    if resolved.is_relative_to(Path(root).resolve()):
-        raise GitError(f"refusing to run {name!r} from inside the reviewed repo: {resolved}")
-    return str(resolved)
+    path = Path(found).absolute()
+    if path.parent.resolve() == Path(root).resolve():
+        raise GitError(f"refusing to run {name!r} from the root of the reviewed repo: {path}")
+    return str(path)
 
 
 def git(root: Path, *args: str, ok_codes: tuple[int, ...] = (0,)) -> str:

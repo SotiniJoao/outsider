@@ -52,7 +52,7 @@ comes from the working-tree file it must be a remote-tracking ref (`origin/main`
 ```toml
 model = "openai/responses/gpt-6.1-sol"   # any LiteLLM model id
 reasoning_effort = "high"        # measured: "medium" missed findings that "high" caught
-max_usd = 1.0            # shared by all passes; checked before every call
+max_usd = 1.0            # shared by all passes; each call reserves room first, overshoot is reported
 max_steps = 40           # per agent
 language = "pt-BR"       # language of the findings
 base = "origin/staging"

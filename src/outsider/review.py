@@ -108,9 +108,10 @@ def _pre_send(cmd: list[str], root: Path, diff: str, files: list[str]) -> str | 
 
 
 def _valid(f: Any) -> bool:
-    return (isinstance(f, dict) and isinstance(f.get("file"), str) and f["file"].strip() != ""
-            and f.get("severity") in SEVERITIES and str(f.get("title", "")).strip() != ""
-            and len(str(f.get("failure_scenario", "")).strip()) >= _MIN_SCENARIO_CHARS)
+    return (isinstance(f, dict) and f.get("severity") in SEVERITIES
+            and all(isinstance(f.get(k), str) for k in ("file", "title", "failure_scenario", "evidence"))
+            and f["file"].strip() != "" and f["title"].strip() != ""
+            and len(f["failure_scenario"].strip()) >= _MIN_SCENARIO_CHARS)
 
 
 def _default_completion() -> Callable[..., Any]:
@@ -150,7 +151,7 @@ def review(opts: Options, completion: Callable[..., Any] | None = None,
     sections = dict(split_diff(diff))
     files = list(sections)
     spec = opts.spec.read_text(encoding="utf-8") if opts.spec else None
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
     meta: dict = {"outsider": __version__, "stamp": stamp, "repo": root.name, "model": cfg.model,
                   "base": base, "head": head, "files": files, "withheld": withheld, "dropped": 0,
                   "spec": opts.spec.name if opts.spec else None, "max_usd": cfg.max_usd, "usd": 0.0,
@@ -233,6 +234,10 @@ def review(opts: Options, completion: Callable[..., Any] | None = None,
     if unverified:
         meta["incomplete"].append(f"verify: {unverified} unverified")
     meta["usd"] = round(budget.spent, 4)
+    # The cap is checked before each call, and a call can cost more than its reservation: say so when it did.
+    meta["over_budget_usd"] = round(max(0.0, budget.spent - cfg.max_usd), 4)
+    if meta["over_budget_usd"] > 0:
+        meta["incomplete"].append(f"budget: over the cap by US$ {meta['over_budget_usd']:.4f}")
     findings.sort(key=report.sort_key)
 
     blocking = any(f["verdict"] == "confirmed" and f["severity"] in ("critical", "high") for f in findings)

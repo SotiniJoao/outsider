@@ -42,7 +42,9 @@ Written before the code. Each one has a test in `tests/` named after its id.
 | A6 | The cost of a call cannot be computed | Use the configured prices; with none, stop as INCOMPLETE rather than run blind on cost |
 | A7 | A tool output is huge | Truncated, with a note telling the model how to narrow the request |
 | A8 | `submit` arrives with missing or mistyped fields (`{}`) | Rejected with the reason; the model must submit again, or the pass is INCOMPLETE. Never read as "no findings" |
-| A9 | Parallel verifiers each see room in the budget and all spend it | Each call reserves its estimated cost before it is made |
+| A9 | Parallel verifiers each see room in the budget and all spend it | Each call reserves its estimated cost before it is made, settled atomically |
+| A10 | A call costs more than its reservation and the cap is passed | Reported as `over_budget_usd`, and the review is INCOMPLETE |
+| A11 | The diff of one file is too big for a tool answer | The `diff` tool pages it by line, like `read_file` |
 
 ## The gate
 

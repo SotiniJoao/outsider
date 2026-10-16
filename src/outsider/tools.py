@@ -24,8 +24,15 @@ _SCHEMAS = [
          **_REPO_PROP}, ["pattern"]),
     _fn("list_dir", "List a directory at the reviewed commit ('' is the root). Directories end with '/'.",
         {"path": {"type": "string"}, **_REPO_PROP}, ["path"]),
-    _fn("diff", "The diff hunks of one changed file.", {"path": {"type": "string"}}, ["path"]),
+    _fn("diff", "The diff of one changed file, with numbered lines; page a long one with start_line/end_line.",
+        {"path": {"type": "string"}, "start_line": {"type": "integer"}, "end_line": {"type": "integer"}}, ["path"]),
 ]
+
+
+def _numbered(lines: list[str], start_line: int | None, end_line: int | None) -> str:
+    start = max(1, int(start_line or 1))
+    end = min(len(lines), int(end_line or len(lines)))
+    return "\n".join(f"{n}\t{lines[n - 1]}" for n in range(start, end + 1)) or "(empty)"
 
 
 class Toolbox:
@@ -48,7 +55,7 @@ class Toolbox:
             if handler is None:
                 return f"error: unknown tool {name!r}"
             out = handler(**args)
-        except (ValueError, TypeError, GuardError, GitError) as exc:
+        except Exception as exc:  # anything the model's arguments can trigger goes back to it, never up the stack
             return redact(f"error: {exc}", self.allowlist)
         return self._cap(redact(out, self.allowlist))
 
@@ -71,10 +78,7 @@ class Toolbox:
     def _read_file(self, path: str, start_line: int | None = None, end_line: int | None = None,
                    repo: str | None = None) -> str:
         p = self._checked(path)
-        lines = redact(self._repo(repo).read(p), self.allowlist).splitlines()
-        start = max(1, start_line or 1)
-        end = min(len(lines), end_line or len(lines))
-        return "\n".join(f"{n}\t{lines[n - 1]}" for n in range(start, end + 1)) or "(empty)"
+        return _numbered(redact(self._repo(repo).read(p), self.allowlist).splitlines(), start_line, end_line)
 
     def _grep(self, pattern: str, path_glob: str | None = None, repo: str | None = None) -> str:
         if path_glob:
@@ -100,9 +104,9 @@ class Toolbox:
         entries = [e for e in self._repo(repo).ls(p) if not is_denied(prefix + e.rstrip("/"), self.deny)]
         return "\n".join(e.removeprefix(prefix) for e in entries) or "(empty)"
 
-    def _diff(self, path: str) -> str:
+    def _diff(self, path: str, start_line: int | None = None, end_line: int | None = None) -> str:
         p = normalize_path(path)
         if p not in self.diff_sections:
             raise ValueError(f"{p} is not part of the diff")
-        return self.diff_sections[p]
+        return _numbered(self.diff_sections[p].splitlines(), start_line, end_line)
 

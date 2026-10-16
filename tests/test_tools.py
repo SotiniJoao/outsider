@@ -162,3 +162,19 @@ def test_G10_redaction_keeps_line_numbers(repo):
     b = box(repo)
     assert "6\tcode_after = 1" in call(b, "read_file", path="k.txt")
     assert "code_after" in call(b, "read_file", path="k.txt", start_line=6)
+
+
+@pytest.mark.parametrize("args", [{"path": None}, {"path": 3}, {"pattern": None}, {"path": "app.py", "start_line": "x"}])
+def test_A3_wrong_argument_types_answered_with_error(repo, args):
+    b = box(repo)
+    for name in ("read_file", "list_dir", "grep", "diff"):
+        assert "error" in b.call(name, json.dumps(args)).lower()
+
+
+def test_A7_diff_of_a_huge_file_can_be_paged(repo):
+    section = "".join(f"+line {i}\n" for i in range(1, 20001))
+    b = box(repo, diff_sections={"big.py": section}, max_chars=2000)
+    first = call(b, "diff", path="big.py")
+    assert "truncated" in first
+    tail = call(b, "diff", path="big.py", start_line=19990, end_line=20000)
+    assert "+line 20000" in tail and "19990\t" in tail

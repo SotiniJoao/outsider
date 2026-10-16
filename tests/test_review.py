@@ -1,4 +1,5 @@
 import json
+import os
 
 import pytest
 import sys
@@ -405,3 +406,58 @@ def test_A9_cap_holds_exactly_when_estimates_are_right(repo, tmp_path):
     for _ in range(5):
         out = review(opts(repo, tmp_path, max_usd=1.0), completion=llm, cost_fn=flat_cost(0.1))
         assert out.report["meta"]["usd"] <= 1.0 + 1e-9
+
+
+def test_A4_finding_without_evidence_is_dropped_not_a_crash(repo, tmp_path):
+    bad = finding()
+    del bad["evidence"]
+    llm = FakeLLM(blind=submit([bad, finding(evidence=None), finding()]), verify=verdict("confirmed"))
+    out = run(repo, tmp_path, llm)
+    assert len(out.report["findings"]) == 1 and out.report["meta"]["dropped"] == 2
+
+
+def test_reports_started_in_the_same_second_do_not_collide(repo, tmp_path):
+    llm = FakeLLM(blind=submit([]))
+    a = run(repo, tmp_path, llm)
+    b = run(repo, tmp_path, llm)
+    assert a.out_dir != b.out_dir and (a.out_dir / "report.json").exists()
+
+
+def test_A10_overspend_is_reported(repo, tmp_path):
+    llm = FakeLLM(blind=submit([finding()]), verify=verdict("plausible"))
+    out = run(repo, tmp_path, llm, cost=0.7, max_usd=1.0)
+    assert out.report["meta"]["usd"] > 1.0
+    assert out.report["meta"]["over_budget_usd"] > 0
+    assert any("budget" in i for i in out.report["meta"]["incomplete"]) and out.exit_code == 2
+    assert "over" in (out.out_dir / "report.md").read_text(encoding="utf-8").lower()
+
+
+def test_L2_venv_python_inside_repo_subdir_keeps_its_path(repo, tmp_path, monkeypatch):
+    from outsider.gitio import executable
+    venv = repo / ".venv" / "bin"
+    venv.mkdir(parents=True)
+    (venv / "python").symlink_to(sys.executable)
+    monkeypatch.setenv("PATH", f"{venv}:{os.environ['PATH']}")
+    assert executable("python", repo) == str(venv / "python")
+
+
+def test_L2_binary_at_repo_root_is_refused(repo, monkeypatch):
+    from outsider.gitio import GitError, executable
+    fake = repo / "gh"
+    fake.write_text("#!/bin/sh\n", encoding="utf-8")
+    fake.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{repo}:{os.environ['PATH']}")
+    with pytest.raises(GitError):
+        executable("gh", repo)
+
+
+@pytest.mark.parametrize("entry,cwd", [("bin", "."), (".", "bin")])
+def test_L2_relative_path_entries_are_ignored(repo, monkeypatch, entry, cwd):
+    from outsider.gitio import executable
+    (repo / "bin").mkdir()
+    fake = repo / "bin" / "git"
+    fake.write_text("#!/bin/sh\n", encoding="utf-8")
+    fake.chmod(0o755)
+    monkeypatch.chdir(repo / cwd)
+    monkeypatch.setenv("PATH", f"{entry}{os.pathsep}{os.environ['PATH']}")
+    assert not executable("git", repo).startswith(str(repo))
