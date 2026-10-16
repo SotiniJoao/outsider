@@ -118,7 +118,7 @@ def test_G4_secret_in_diff_aborts_before_any_call(repo, tmp_path):
 
 def test_G4_secret_in_spec_aborts(repo, tmp_path):
     spec = tmp_path / "spec.md"
-    spec.write_text("use AKIAABCDEFGHIJKLMNOP\n", encoding="utf-8")
+    spec.write_text("use AKIA" + "ABCDEFGHIJKLMNOP\n", encoding="utf-8")
     llm = FakeLLM(blind=submit([]))
     assert run(repo, tmp_path, llm, spec=spec).exit_code == 3 and llm.calls == []
 

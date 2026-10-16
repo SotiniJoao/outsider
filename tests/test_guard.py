@@ -67,8 +67,8 @@ def test_G4_secret_in_diff_reported_without_value():
 
 
 @pytest.mark.parametrize("value,kind", [(FAKE_GITHUB, "github"), (FAKE_AWS, "aws"),
-                                        ("-----BEGIN RSA PRIVATE KEY-----", "private_key"),
-                                        ("xoxb-1234567890-abcdefghij", "slack"),
+                                        ("-----BEGIN RSA " + "PRIVATE KEY-----", "private_key"),
+                                        ("xoxb" + "-1234567890-abcdefghij", "slack"),
                                         ("sk_" + "ab12" * 12, "elevenlabs")])
 def test_G4_known_secret_shapes(value, kind):
     assert [h.kind for h in scan_text(f"x = '{value}'\n")] == [kind]
@@ -113,3 +113,16 @@ def test_M3_pgp_private_key_scanned_and_redacted():
 @pytest.mark.parametrize("path", ["keys/signing.asc", "backup.gpg", "putty.ppk"])
 def test_M3_key_containers_denied(path):
     assert is_denied(path, DEFAULT_DENY)
+
+
+def test_G4_hits_point_at_file_lines_not_diff_lines():
+    diff = ("diff --git a/s.py b/s.py\nindex 1..2 100644\n--- a/s.py\n+++ b/s.py\n@@ -10,3 +10,4 @@\n x = 1\n"
+            "-old = 'ghp_" + "h" * 36 + "'\n+y = 2\n+new = 'ghp_" + "i" * 36 + "'\n z = 3\n")
+    assert [(h.path, h.line) for h in scan_diff(diff)] == [("s.py", 11), ("s.py", 12)]
+
+
+def test_G4_secret_in_hunk_header_context_is_caught():
+    token = "ghp_" + "j" * 36
+    diff = ("diff --git a/s.py b/s.py\n--- a/s.py\n+++ b/s.py\n"
+            f"@@ -19,2 +19,2 @@ TOKEN = '{token}'\n-a = 1\n+a = 2\n b = 3\n\\ No newline at end of file\n")
+    assert [(h.line, h.kind) for h in scan_diff(diff)] == [(19, "github")]

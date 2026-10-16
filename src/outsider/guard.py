@@ -97,8 +97,32 @@ def scan_text(text: str, allowlist: tuple[str, ...] = (), path: str | None = Non
     return hits
 
 
+_HUNK = re.compile(r"^@@ -(\d+)(?:,\d+)? \+(\d+)")
+
+
 def scan_diff(diff: str, allowlist: tuple[str, ...] = ()) -> list[SecretHit]:
-    return [h for path, section in split_diff(diff) for h in scan_text(section, allowlist, path)]
+    """Hits carry the file's line: the new side for added and context lines, the old side for removed ones."""
+    hits = []
+    for path, section in split_diff(diff):
+        old_no = new_no = 0
+        for line in section.splitlines():
+            hunk = _HUNK.match(line)
+            at = 0
+            if hunk:
+                # The text after `@@` is a nearby unchanged line git quotes for context: it still leaves the machine.
+                old_no, new_no = int(hunk.group(1)), int(hunk.group(2))
+                at = new_no
+            elif line.startswith("\\"):
+                pass
+            elif old_no or new_no:
+                if line.startswith("-"):
+                    at, old_no = old_no, old_no + 1
+                elif line.startswith("+"):
+                    at, new_no = new_no, new_no + 1
+                else:
+                    at, old_no, new_no = new_no, old_no + 1, new_no + 1
+            hits += [SecretHit(path, at, h.kind) for h in scan_text(line, allowlist)]
+    return hits
 
 
 def private_key_lines(text: str) -> set[int]:
