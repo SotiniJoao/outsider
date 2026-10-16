@@ -10,7 +10,9 @@ from pathlib import Path
 # Config in the reviewed repo must not run anything or reach the network: no pager, external diff, fsmonitor,
 # signature check (gpg.program) or transport (lazy fetch in a partial clone). Paths come back unquoted.
 _SAFE = ["-c", "core.pager=cat", "-c", "core.fsmonitor=false", "-c", "diff.external=", "-c", "core.quotePath=false",
-         "-c", "log.showSignature=false", "-c", "protocol.allow=never"]
+         "-c", "log.showSignature=false", "-c", "protocol.allow=never", "-c", "diff.noprefix=false",
+         "-c", "diff.mnemonicPrefix=false"]
+_DIFF = ["--no-color", "--no-ext-diff", "--no-textconv", "--find-renames", "--src-prefix=a/", "--dst-prefix=b/"]
 _ENV = {"GIT_NO_LAZY_FETCH": "1", "GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0"}
 
 
@@ -47,12 +49,14 @@ def resolve(root: Path, ref: str) -> str:
 
 
 def diff_range(root: Path, base: str, head: str) -> str:
-    return git(root, "diff", "--no-color", "--no-ext-diff", "--no-textconv", "--find-renames", f"{base}...{head}")
+    return git(root, "diff", *_DIFF, f"{base}...{head}")
 
 
-def diff_commit(root: Path, sha: str) -> str:
-    return git(root, "show", "--no-color", "--no-ext-diff", "--no-textconv", "--no-show-signature",
-               "--find-renames", "--format=", sha)
+def diff_commit(root: Path, sha: str, parent: str | None) -> str:
+    """Against the first parent, so a merge shows what it brought in (git show would print a combined diff)."""
+    if parent:
+        return git(root, "diff", *_DIFF, parent, sha)
+    return git(root, "show", *_DIFF, "--no-show-signature", "--format=", sha)
 
 
 @dataclass

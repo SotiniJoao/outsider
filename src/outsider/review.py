@@ -129,7 +129,7 @@ def review(opts: Options, completion: Callable[..., Any] | None = None,
             head = resolve(root, opts.commit)
             parents = git(root, "rev-list", "--parents", "-n", "1", head).split()[1:]
             base = parents[0] if parents else "(root)"
-            raw_diff = diff_commit(root, head)
+            raw_diff = diff_commit(root, head, parents[0] if parents else None)
         else:
             base_ref = _base_ref(opts, root)
             if not base_ref:

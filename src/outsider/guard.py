@@ -135,7 +135,7 @@ def private_key_lines(text: str) -> set[int]:
 
 
 def redact(text: str, allowlist: tuple[str, ...] = ()) -> str:
-    text = _KEY_BLOCK.sub(REDACTED, text)
+    text = _KEY_BLOCK.sub(lambda m: REDACTED + "\n" * m.group(0).count("\n"), text)  # keeps line numbers
     for _, pat in _SECRET_PATTERNS:
         text = pat.sub(lambda m: m.group(0) if _allowed(m.group(0), allowlist) else REDACTED, text)
     return text

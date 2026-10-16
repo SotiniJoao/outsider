@@ -94,3 +94,16 @@ def test_assistant_tool_calls_are_echoed_back_in_openai_shape(repo):
     assert assistant["tool_calls"][0]["id"] == "abc"
     assert json.loads(assistant["tool_calls"][0]["function"]["arguments"]) == {"path": ""}
     assert llm.calls[1]["messages"][-1]["tool_call_id"] == "abc"
+
+
+@pytest.mark.parametrize("bad", [{}, {"findings": "none", "summary": "x"}, {"summary": "x"}])
+def test_A8_submit_that_breaks_the_schema_is_rejected(repo, bad):
+    llm = FakeLLM(blind=[reply(tool_call("submit", bad)), submit([])])
+    run = go(repo, llm)
+    assert run.result == {"findings": [], "summary": "ok"} and len(llm.calls) == 2
+    assert "schema" in llm.calls[1]["messages"][-1]["content"]
+
+
+def test_A8_schema_breaking_submit_to_the_end_is_incomplete(repo):
+    run = go(repo, FakeLLM(blind=reply(tool_call("submit", {}))), steps=3)
+    assert run.result is None and run.incomplete == "steps"

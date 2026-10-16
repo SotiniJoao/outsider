@@ -18,16 +18,37 @@ class Budget:
     """Shared by every agent of one review; safe across verifier threads."""
 
     def __init__(self, max_usd: float):
-        self.max_usd, self.spent = max_usd, 0.0
+        self.max_usd, self.spent, self.reserved = max_usd, 0.0, 0.0
+        self.last_call = 0.0
         self._lock = threading.Lock()
 
     def charge(self, usd: float) -> None:
         with self._lock:
             self.spent += usd
+            self.last_call = usd
+
+    def reserve(self, usd: float) -> bool:
+        """Claims room for one call before it is made, so parallel verifiers can't spend the same dollars."""
+        with self._lock:
+            if self.spent + self.reserved + usd > self.max_usd + 1e-12 or self.spent + self.reserved >= self.max_usd:
+                return False
+            self.reserved += usd
+            return True
+
+    def release(self, usd: float) -> None:
+        with self._lock:
+            self.reserved -= usd
+
+    def settle(self, reserved: float, actual: float) -> None:
+        """Swap a reservation for the real cost in one step: no other thread sees the gap between them."""
+        with self._lock:
+            self.reserved -= reserved
+            self.spent += actual
+            self.last_call = actual
 
     @property
     def remaining(self) -> float:
-        return self.max_usd - self.spent
+        return self.max_usd - self.spent - self.reserved
 
 
 @dataclass
@@ -61,6 +82,25 @@ def _submit_tool(schema: dict) -> dict:
                                              "parameters": schema}}
 
 
+_TYPES = {"array": list, "string": str, "integer": int, "object": dict}
+
+
+def schema_error(payload: dict, schema: dict) -> str | None:
+    """Top-level check of a `submit` payload: required keys, types and enums. Items are checked by the caller."""
+    for key in schema.get("required", []):
+        if key not in payload:
+            return f"missing {key!r}"
+    for key, spec in schema.get("properties", {}).items():
+        if key not in payload:
+            continue
+        expected = _TYPES.get(spec.get("type"))
+        if expected and not isinstance(payload[key], expected):
+            return f"{key!r} must be {spec['type']}"
+        if "enum" in spec and payload[key] not in spec["enum"]:
+            return f"{key!r} must be one of {spec['enum']}"
+    return None
+
+
 def _as_message(msg: Any) -> dict:
     calls = [{"id": c.id, "type": "function", "function": {"name": c.function.name,
                                                            "arguments": c.function.arguments or "{}"}}
@@ -85,6 +125,11 @@ def run_agent(system: str, user: str, toolbox: Toolbox, submit_schema: dict, *, 
             return run
         # Hand in while one more call still fits: the last one cost `last_cost`.
         force = run.steps == max_steps - 1 or (last_cost > 0 and room < max(1.5 * last_cost, 0.15 * cap_usd))
+        # The reservation is this agent's last call, else the review's last call, else a small slice of the cap.
+        estimate = min(room, last_cost or budget.last_call or 0.05 * cap_usd)
+        if not budget.reserve(estimate):
+            run.incomplete = "budget"
+            return run
         kwargs: dict = {"model": model, "messages": messages, "tools": tools,
                         "tool_choice": {"type": "function", "function": {"name": "submit"}} if force else "auto"}
         if reasoning_effort:
@@ -92,17 +137,19 @@ def run_agent(system: str, user: str, toolbox: Toolbox, submit_schema: dict, *, 
         try:
             resp = completion(**kwargs)
         except Exception as exc:
+            budget.release(estimate)
             run.incomplete = "provider_error"
             run.tool_calls.append(f"provider_error: {type(exc).__name__}")
             return run
         run.steps += 1
         try:
             last_cost = cost_fn(resp, model)
-        except CostUnknown:
+        except Exception:
+            budget.release(estimate)
             run.incomplete = "cost_unknown"
             return run
         run.usd += last_cost
-        budget.charge(last_cost)
+        budget.settle(estimate, last_cost)
         msg = resp.choices[0].message
         assistant = _as_message(msg)
         messages.append(assistant)
@@ -120,8 +167,11 @@ def run_agent(system: str, user: str, toolbox: Toolbox, submit_schema: dict, *, 
                 except ValueError:
                     out = "error: submit arguments must be a JSON object matching the schema; call submit again"
                 else:
-                    run.result = payload
-                    return run
+                    problem = schema_error(payload, submit_schema)
+                    if problem is None:
+                        run.result = payload
+                        return run
+                    out = f"error: submit does not match the schema ({problem}); call submit again"
             else:
                 out = toolbox.call(name, raw)
             messages.append({"role": "tool", "tool_call_id": call["id"], "content": out})

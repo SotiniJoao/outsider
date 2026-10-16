@@ -340,3 +340,68 @@ def test_M1_working_tree_base_is_exactly_remote_slash_branch(repo, tmp_path, bas
     out = review(Options(root=repo, head="feature", out=tmp_path / "o", model="m"), completion=llm,
                  cost_fn=flat_cost(0.001))
     assert out.exit_code == 64 and llm.calls == []
+
+
+def test_V5_merge_commit_is_reviewed_against_its_first_parent(repo, tmp_path):
+    git(repo, "checkout", "-q", "main")
+    git(repo, "checkout", "-q", "-b", "side")
+    (repo / "side.py").write_text("s = 1\n", encoding="utf-8")
+    commit_all(repo, "side")
+    git(repo, "checkout", "-q", "main")
+    (repo / "main_only.py").write_text("m = 1\n", encoding="utf-8")
+    commit_all(repo, "main")
+    git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "merge", "-q", "--no-edit", "side")
+    merge = git(repo, "rev-parse", "HEAD")
+    llm = FakeLLM(blind=submit([]))
+    out = review(Options(root=repo, commit=merge, head=None, out=tmp_path / "o", model="m"), completion=llm,
+                 cost_fn=flat_cost(0.001))
+    assert out.report["meta"]["files"] == ["side.py"] and llm.calls
+
+
+def test_V6_diff_noprefix_config_keeps_file_names(repo, tmp_path):
+    git(repo, "config", "diff.noprefix", "true")
+    git(repo, "config", "diff.mnemonicPrefix", "true")
+    (repo / "b.py").write_text("x = 1\n", encoding="utf-8")
+    commit_all(repo, "second file")
+    out = run(repo, tmp_path, FakeLLM(blind=submit([])))
+    assert sorted(out.report["meta"]["files"]) == ["app.py", "b.py"]
+
+
+def test_A9_concurrent_verifiers_never_overspend(repo, tmp_path):
+    import threading
+    import time
+    many = [finding(line=i, title=f"t{i}") for i in range(1, 9)]
+
+    def slow_verdict(kw):
+        time.sleep(0.05)
+        return verdict("plausible")
+
+    costs = {"blind": 0.5, "verify": 0.1}
+    lock = threading.Lock()
+
+    def cost(resp, model):
+        with lock:
+            return costs[resp.role]
+
+    def tag(role, fn):
+        def inner(kw):
+            r = fn(kw)
+            r.role = role
+            return r
+        return inner
+    llm = FakeLLM(blind=tag("blind", lambda kw: submit(many)), verify=tag("verify", slow_verdict))
+    out = review(opts(repo, tmp_path, max_usd=1.0), completion=llm, cost_fn=cost)
+    assert out.report["meta"]["usd"] <= 1.0 + 1e-9
+
+
+def test_A9_cap_holds_exactly_when_estimates_are_right(repo, tmp_path):
+    import time
+    many = [finding(line=i, title=f"t{i}") for i in range(1, 9)]
+
+    def slow(kw):
+        time.sleep(0.02)
+        return verdict("plausible")
+    llm = FakeLLM(blind=submit(many), verify=slow)
+    for _ in range(5):
+        out = review(opts(repo, tmp_path, max_usd=1.0), completion=llm, cost_fn=flat_cost(0.1))
+        assert out.report["meta"]["usd"] <= 1.0 + 1e-9

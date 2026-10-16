@@ -154,3 +154,11 @@ def test_H2_private_key_body_redacted_everywhere(repo, name):
 def test_L4_error_messages_are_redacted(repo):
     out = call(box(repo), "read_file", path="ghp_" + "d" * 36 + ".py")
     assert "ghp_" not in out
+
+
+def test_G10_redaction_keeps_line_numbers(repo):
+    (repo / "k.txt").write_text("header\n" + _key_block() + "code_after = 1\n", encoding="utf-8")
+    commit_all(repo, "key then code")
+    b = box(repo)
+    assert "6\tcode_after = 1" in call(b, "read_file", path="k.txt")
+    assert "code_after" in call(b, "read_file", path="k.txt", start_line=6)
