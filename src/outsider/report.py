@@ -16,10 +16,15 @@ def sort_key(f: dict) -> tuple:
     return _VERDICT_ORDER.get(f.get("verdict"), 9), _SEVERITY_ORDER.get(f.get("severity"), 9), f.get("file", "")
 
 
+def _models(m: dict) -> str:
+    verify = m.get("verify_model") or m["model"]
+    return m["model"] if verify == m["model"] else f"{m['model']} (verifier {verify})"
+
+
 def markdown(rep: dict, code: int) -> str:
     m = rep["meta"]
     lines = [f"## outsider: {_STATUS.get(code, code)}", "",
-             f"`{m['head'][:12]}` against `{m['base'][:12]}` · {m['model']} · US$ {m['usd']:.2f} of "
+             f"`{m['head'][:12]}` against `{m['base'][:12]}` · {_models(m)} · US$ {m['usd']:.2f} of "
              f"{m['max_usd']:.2f} · {len(m['files'])} files"]
     if m.get("base_from_working_tree"):
         lines.append("Base taken from the working tree's `.outsider.toml`; in CI pass `--base` or `--config`.")

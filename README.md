@@ -12,7 +12,7 @@ It is meant as the **last gate before a PR**, on top of the reviews you already 
 model from a different family than the one that wrote the code.
 
 ```
-pip install "git+https://github.com/SotiniJoao/outsider@v0.1.0"
+pip install "git+https://github.com/SotiniJoao/outsider@v0.2.0"
 outsider --base origin/main
 ```
 
@@ -55,6 +55,7 @@ comes from the working-tree file it must be a remote-tracking ref (`origin/main`
 
 ```toml
 model = "openai/responses/gpt-6.1-sol"   # any LiteLLM model id
+verify_model = "openai/responses/gpt-6.1-sol"  # optional, defaults to `model`; see "Cost" below
 reasoning_effort = "high"        # measured: "medium" missed findings that "high" caught
 max_usd = 1.0            # shared by all passes; each call reserves room first, overshoot is reported
 max_steps = 40           # per agent
@@ -73,6 +74,13 @@ ref = "origin/staging"
 
 Provider keys come from the environment, the way LiteLLM reads them (`OPENAI_API_KEY`, …), or from
 `--env-file path/to/.env`.
+
+## Cost
+
+Most of the cost is the blind pass: it walks the code for many steps and resends its history on each one.
+A cheap `model` for the passes with a strong `verify_model` for the refutation keeps most of the recall.
+Measured on four reviews with known answers: a model 10x cheaper alone found 2 of 3 known high findings
+at about a tenth of the cost; with the strong model as verifier, 3 of 3 were found at about a third.
 
 ## What leaves the machine
 

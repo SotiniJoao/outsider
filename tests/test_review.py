@@ -461,3 +461,21 @@ def test_L2_relative_path_entries_are_ignored(repo, monkeypatch, entry, cwd):
     monkeypatch.chdir(repo / cwd)
     monkeypatch.setenv("PATH", f"{entry}{os.pathsep}{os.environ['PATH']}")
     assert not executable("git", repo).startswith(str(repo))
+
+
+def test_verify_model_runs_only_the_verifier(repo, tmp_path):
+    """A cheap blind pass with a stronger verifier: each pass gets its own model, and the report says which."""
+    cfg = tmp_path / "o.toml"
+    cfg.write_text('model = "cheap"\nverify_model = "strong"\n', encoding="utf-8")
+    llm = FakeLLM(blind=submit([finding()]), verify=verdict("confirmed"))
+    out = review(Options(root=repo, base="main", head="feature", out=tmp_path / "out", config=cfg),
+                 completion=llm, cost_fn=flat_cost(0.001))
+    assert {c["model"] for c in llm.of("blind")} == {"cheap"}
+    assert {c["model"] for c in llm.of("verify")} == {"strong"}
+    assert out.report["meta"]["verify_model"] == "strong"
+
+
+def test_verify_model_defaults_to_model(repo, tmp_path):
+    llm = FakeLLM(blind=submit([finding()]), verify=verdict("confirmed"))
+    run(repo, tmp_path, llm)
+    assert {c["model"] for c in llm.calls} == {"m"}

@@ -56,3 +56,4 @@ Written before the code. Each one has a test in `tests/` named after its id.
 | V5 | `--commit` on a merge commit | Diffed against the first parent, never git's combined diff (which can be empty) |
 | V6 | The repo sets `diff.noprefix` or `diff.mnemonicPrefix` | Prefixes are forced, so every file keeps its own section |
 | V4 | The review is incomplete but already holds a confirmed critical/high | Exit 1: the blocker is known; the report still lists what was cut short |
+| V7 | `verify_model` set: the cheap model leaks into the verifier, or the strong one into the blind pass | Only the verifier uses `verify_model`; the report names both |

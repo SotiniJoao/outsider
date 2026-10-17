@@ -153,6 +153,7 @@ def review(opts: Options, completion: Callable[..., Any] | None = None,
     spec = opts.spec.read_text(encoding="utf-8") if opts.spec else None
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
     meta: dict = {"outsider": __version__, "stamp": stamp, "repo": root.name, "model": cfg.model,
+                  "verify_model": cfg.verify_model or cfg.model,
                   "base": base, "head": head, "files": files, "withheld": withheld, "dropped": 0,
                   "spec": opts.spec.name if opts.spec else None, "max_usd": cfg.max_usd, "usd": 0.0,
                   "phases": {}, "incomplete": [], "aborted": None, "base_from_working_tree": base_from_tree}
@@ -218,7 +219,8 @@ def review(opts: Options, completion: Callable[..., Any] | None = None,
             return dict(f, verdict="unverified", reasoning="budget exhausted before verification")
         claim_spec = spec if f["pass"] == "intent" else None
         run = run_agent(verify_system(cfg.language, neighbours), verify_user(f, context, claim_spec), toolbox,
-                        VERDICT_SCHEMA, cap_usd=cfg.max_usd * 0.1, **common)
+                        VERDICT_SCHEMA, cap_usd=cfg.max_usd * 0.1,
+                        **{**common, "model": cfg.verify_model or cfg.model})
         v = run.result or {}
         if v.get("verdict") not in ("confirmed", "plausible", "refuted"):
             return dict(f, verdict="unverified", reasoning=f"verifier incomplete: {run.incomplete}",

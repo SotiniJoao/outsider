@@ -15,6 +15,8 @@ FILE = ".outsider.toml"
 @dataclass
 class Config:
     model: str = "gpt-6.1-sol"
+    # A cheaper `model` can do the blind and intent passes while this one refutes; defaults to `model`.
+    verify_model: str | None = None
     reasoning_effort: str | None = "high"
     max_usd: float = 1.0
     max_steps: int = 40
