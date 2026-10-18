@@ -97,13 +97,66 @@ def test_assistant_tool_calls_are_echoed_back_in_openai_shape(repo):
 
 
 @pytest.mark.parametrize("bad", [{}, {"findings": "none", "summary": "x"}, {"summary": "x"}])
-def test_A8_submit_that_breaks_the_schema_is_rejected(repo, bad):
+def test_A13_submit_that_breaks_the_schema_is_rejected(repo, bad):
     llm = FakeLLM(blind=[reply(tool_call("submit", bad)), submit([])])
     run = go(repo, llm)
     assert run.result == {"findings": [], "summary": "ok"} and len(llm.calls) == 2
     assert "schema" in llm.calls[1]["messages"][-1]["content"]
 
 
-def test_A8_schema_breaking_submit_to_the_end_is_incomplete(repo):
+def test_A13_schema_breaking_submit_to_the_end_is_incomplete(repo):
     run = go(repo, FakeLLM(blind=reply(tool_call("submit", {}))), steps=3)
     assert run.result is None and run.incomplete == "steps"
+
+
+class _ProviderError(Exception):
+    def __init__(self, status):
+        super().__init__("x")
+        self.status_code = status
+
+
+class Timeout(Exception):
+    pass
+
+
+def flaky(fails, then):
+    """Raises each of `fails` once, then answers `then`."""
+    left = list(fails)
+
+    def call(kw):
+        if left:
+            raise left.pop(0)
+        return then
+    return call
+
+
+@pytest.fixture(autouse=True)
+def no_backoff(monkeypatch):
+    monkeypatch.setattr("outsider.agent._sleep", lambda s: None)
+
+
+@pytest.mark.parametrize("exc", [_ProviderError(429), _ProviderError(503), Timeout()])
+def test_A13_transient_error_is_retried(repo, exc):
+    llm = FakeLLM(blind=flaky([exc, exc], submit([finding()])))
+    run = go(repo, llm)
+    assert run.incomplete is None and run.result and len(llm.calls) == 3 and run.steps == 1
+
+
+def test_A13_retries_are_capped(repo):
+    llm = FakeLLM(blind=flaky([_ProviderError(503)] * 3, submit([])))
+    run = go(repo, llm)
+    assert run.incomplete == "provider_error" and len(llm.calls) == 3 and run.error == "_ProviderError 503"
+
+
+@pytest.mark.parametrize("status", [400, 401])
+def test_A14_permanent_error_is_not_retried(repo, status):
+    llm = FakeLLM(blind=flaky([_ProviderError(status)], submit([])))
+    run = go(repo, llm)
+    assert run.incomplete == "provider_error" and len(llm.calls) == 1
+
+
+def test_A15_retry_neither_charges_nor_leaks_the_reservation(repo):
+    budget = Budget(1.0)
+    run = go(repo, FakeLLM(blind=flaky([_ProviderError(429)], submit([]))), budget=budget, cost=0.01)
+    assert run.result is not None
+    assert budget.spent == pytest.approx(0.01) and budget.reserved == pytest.approx(0.0)

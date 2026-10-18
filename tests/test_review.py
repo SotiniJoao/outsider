@@ -544,3 +544,27 @@ def test_V11_unknown_severity_in_verify_model_for_is_a_config_error(tmp_path):
 def test_V12_report_names_the_verifier_of_each_finding(repo, tmp_path):
     _, out = _split_review(repo, tmp_path, submit([finding()]), verdict("confirmed"))
     assert "**Verifier (strong).**" in (out.out_dir / "report.md").read_text(encoding="utf-8")
+
+
+def test_A12_provider_error_names_its_class_and_status_never_the_message(repo, tmp_path, monkeypatch):
+    monkeypatch.setattr("outsider.agent._sleep", lambda s: None)
+    class RateLimitError(Exception):
+        status_code, code = 429, "rate_limit_exceeded"
+
+    def boom(kw):
+        raise RateLimitError("SECRET-PROMPT-ECHO")
+    out = run(repo, tmp_path, FakeLLM(blind=boom))
+    incomplete = "; ".join(out.report["meta"]["incomplete"])
+    assert "RateLimitError 429 rate_limit_exceeded" in incomplete
+    assert "SECRET-PROMPT-ECHO" not in json.dumps(out.report)
+
+
+def test_A12_provider_code_that_is_not_a_short_slug_is_dropped(repo, tmp_path):
+    class BadRequestError(Exception):
+        status_code, code = "400 SECRET-STATUS", "context SECRET-ECHO"
+
+    def boom(kw):
+        raise BadRequestError("m")
+    out = run(repo, tmp_path, FakeLLM(blind=boom))
+    incomplete = "; ".join(out.report["meta"]["incomplete"])
+    assert "(BadRequestError)" in incomplete and "SECRET" not in json.dumps(out.report)

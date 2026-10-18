@@ -199,7 +199,7 @@ def review(opts: Options, completion: Callable[..., Any] | None = None,
     def phase(name: str, run) -> list[dict]:
         meta["phases"][name] = {"steps": run.steps, "usd": round(run.usd, 4), "incomplete": run.incomplete}
         if run.incomplete:
-            meta["incomplete"].append(f"{name}: {run.incomplete}")
+            meta["incomplete"].append(f"{name}: {run.incomplete}" + (f" ({run.error})" if run.error else ""))
         raw = (run.result or {}).get("findings") or []
         good = [dict(f, line=int(f.get("line") or 0) if str(f.get("line") or 0).isdigit() else 0, **{"pass": name})
                 for f in raw if _valid(f)]
@@ -226,8 +226,8 @@ def review(opts: Options, completion: Callable[..., Any] | None = None,
         spent += run.usd
         v = run.result or {}
         if v.get("verdict") not in ("confirmed", "plausible", "refuted"):
-            return dict(f, verdict="unverified", reasoning=f"verifier incomplete: {run.incomplete}",
-                        verified_by=model, verify_usd=round(spent, 4))
+            why = f"verifier incomplete: {run.incomplete}" + (f" ({run.error})" if run.error else "")
+            return dict(f, verdict="unverified", reasoning=why, verified_by=model, verify_usd=round(spent, 4))
         severity = v.get("severity") if v["verdict"] == "confirmed" and v.get("severity") in SEVERITIES \
             else f["severity"]
         # The cheap verifier may not raise a claim into what blocks: the strong one checks it again, from zero.

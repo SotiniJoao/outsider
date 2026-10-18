@@ -1,6 +1,6 @@
 [project]
 name = "outsider"
-version = "0.3.0"
+version = "0.3.1"
 description = "A blind, adversarial reviewer for your branch: a model that never saw the ticket tries to break the diff."
 readme = "README.md"
 license = "MIT"

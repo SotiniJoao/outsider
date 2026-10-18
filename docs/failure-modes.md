@@ -45,6 +45,10 @@ Written before the code. Each one has a test in `tests/` named after its id.
 | A9 | Parallel verifiers each see room in the budget and all spend it | Each call reserves its estimated cost before it is made, settled atomically |
 | A10 | A call costs more than its reservation and the cap is passed | Reported as `over_budget_usd`, and the review is INCOMPLETE |
 | A11 | The diff of one file is too big for a tool answer | The `diff` tool pages it by line, like `read_file` |
+| A12 | A provider error hides its cause | The report names its class, status and code, never its message (it can echo the request) |
+| A13 | One transient provider error (429, 5xx, timeout, connection) throws away a whole pass | Retried twice with backoff, then A5 |
+| A14 | A permanent error (400, auth) is retried | Not retried |
+| A15 | A retry is charged or leaks its budget reservation | A failed call costs nothing and keeps the same reservation |
 
 ## The gate
 

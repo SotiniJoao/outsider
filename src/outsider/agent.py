@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import json
+import re
 import threading
+import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -12,6 +14,37 @@ from outsider.tools import Toolbox
 
 class CostUnknown(RuntimeError):
     pass
+
+
+_sleep = time.sleep
+_RETRY_WAITS = (2.0, 8.0)
+_TRANSIENT_STATUS = {408, 429, 500, 502, 503, 504}
+_TRANSIENT_NAMES = ("Timeout", "APIConnectionError", "RateLimitError", "ServiceUnavailableError", "InternalServerError")
+
+
+def _transient(exc: Exception) -> bool:
+    status = getattr(exc, "status_code", None)
+    return status in _TRANSIENT_STATUS if status else type(exc).__name__ in _TRANSIENT_NAMES
+
+
+def _error_name(exc: Exception) -> str:
+    """Provider bodies can echo the request: only an int status and a short slug code get through."""
+    status, code = getattr(exc, "status_code", None), getattr(exc, "code", None)
+    parts = [type(exc).__name__, status if isinstance(status, int) else None,
+             code if isinstance(code, str | int) and re.fullmatch(r"[A-Za-z0-9_.-]{1,40}", str(code)) else None]
+    return " ".join(str(p) for p in parts if p)
+
+
+def _complete(completion: Callable[..., Any], kwargs: dict) -> Any:
+    """A failed call is not billed, so a transient one is retried inside the same reservation."""
+    for wait in _RETRY_WAITS:
+        try:
+            return completion(**kwargs)
+        except Exception as exc:
+            if not _transient(exc):
+                raise
+            _sleep(wait)
+    return completion(**kwargs)
 
 
 class Budget:
@@ -57,6 +90,8 @@ class AgentRun:
     steps: int = 0
     usd: float = 0.0
     incomplete: str | None = None
+    # Class, status and code of a provider error; never its message, which can echo the request.
+    error: str | None = None
     tool_calls: list[str] = field(default_factory=list)
 
 
@@ -135,10 +170,11 @@ def run_agent(system: str, user: str, toolbox: Toolbox, submit_schema: dict, *, 
         if reasoning_effort:
             kwargs["reasoning_effort"] = reasoning_effort
         try:
-            resp = completion(**kwargs)
+            resp = _complete(completion, kwargs)
         except Exception as exc:
             budget.release(estimate)
             run.incomplete = "provider_error"
+            run.error = _error_name(exc)
             run.tool_calls.append(f"provider_error: {type(exc).__name__}")
             return run
         run.steps += 1
