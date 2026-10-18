@@ -479,3 +479,68 @@ def test_verify_model_defaults_to_model(repo, tmp_path):
     llm = FakeLLM(blind=submit([finding()]), verify=verdict("confirmed"))
     run(repo, tmp_path, llm)
     assert {c["model"] for c in llm.calls} == {"m"}
+
+
+def _split_review(repo, tmp_path, blind, verify, extra=""):
+    cfg = tmp_path / "o.toml"
+    cfg.write_text(f'model = "cheap"\nverify_model = "strong"\n{extra}', encoding="utf-8")
+    llm = FakeLLM(blind=blind, verify=verify)
+    out = review(Options(root=repo, base="main", head="feature", out=tmp_path / "out", config=cfg),
+                 completion=llm, cost_fn=flat_cost(0.001))
+    return llm, out
+
+
+def by_model(**verdicts):
+    return lambda kw: verdicts[kw["model"]]
+
+
+def test_V8_only_critical_and_high_claims_go_to_the_strong_verifier(repo, tmp_path):
+    llm, out = _split_review(repo, tmp_path,
+                             submit([finding(), finding(severity="critical", line=1), finding(severity="medium", line=3)]),
+                             by_model(strong=verdict("confirmed"), cheap=verdict("confirmed", "medium")))
+    by_claim = {f["claimed_severity"]: f["verified_by"] for f in out.report["findings"]}
+    assert by_claim == {"high": "strong", "critical": "strong", "medium": "cheap"}
+    assert sorted(c["model"] for c in llm.of("verify")) == ["cheap", "strong", "strong"]
+
+
+def test_V8_verify_model_for_can_send_everything_to_the_strong_model(repo, tmp_path):
+    llm, _ = _split_review(repo, tmp_path, submit([finding(severity="low")]), verdict("confirmed", "low"),
+                           'verify_model_for = ["critical", "high", "medium", "low"]\n')
+    assert {c["model"] for c in llm.of("verify")} == {"strong"}
+
+
+def test_V9_cheap_upgrade_to_high_is_rechecked_by_the_strong_model(repo, tmp_path):
+    llm, out = _split_review(repo, tmp_path, submit([finding(severity="medium")]),
+                             by_model(cheap=verdict("confirmed", "high"), strong=verdict("refuted", "medium")))
+    f = out.report["findings"][0]
+    assert [c["model"] for c in llm.of("verify")] == ["cheap", "strong"]
+    assert f["verdict"] == "refuted" and f["verified_by"] == "strong" and out.exit_code == 0
+    assert f["severity"] == f["claimed_severity"] == "medium"
+    assert f["verify_usd"] == pytest.approx(0.002)
+
+
+def test_V9_strong_confirmation_of_the_upgrade_blocks(repo, tmp_path):
+    _, out = _split_review(repo, tmp_path, submit([finding(severity="medium")]),
+                           by_model(cheap=verdict("confirmed", "high"), strong=verdict("confirmed", "high")))
+    assert out.exit_code == 1 and out.report["findings"][0]["verified_by"] == "strong"
+
+
+def test_V10_upgrade_that_cannot_be_rechecked_is_unverified(repo, tmp_path):
+    def strong_fails(kw):
+        if kw["model"] == "strong":
+            raise RuntimeError("provider down")
+        return verdict("confirmed", "critical")
+    _, out = _split_review(repo, tmp_path, submit([finding(severity="medium")]), strong_fails)
+    f = out.report["findings"][0]
+    assert f["verdict"] == "unverified" and out.exit_code == 2
+
+
+def test_V11_unknown_severity_in_verify_model_for_is_a_config_error(tmp_path):
+    from outsider.config import parse
+    with pytest.raises(ValueError):
+        parse('verify_model_for = ["hihg"]\n', tmp_path)
+
+
+def test_V12_report_names_the_verifier_of_each_finding(repo, tmp_path):
+    _, out = _split_review(repo, tmp_path, submit([finding()]), verdict("confirmed"))
+    assert "**Verifier (strong).**" in (out.out_dir / "report.md").read_text(encoding="utf-8")

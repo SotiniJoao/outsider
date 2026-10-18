@@ -57,3 +57,8 @@ Written before the code. Each one has a test in `tests/` named after its id.
 | V6 | The repo sets `diff.noprefix` or `diff.mnemonicPrefix` | Prefixes are forced, so every file keeps its own section |
 | V4 | The review is incomplete but already holds a confirmed critical/high | Exit 1: the blocker is known; the report still lists what was cut short |
 | V7 | `verify_model` set: the cheap model leaks into the verifier, or the strong one into the blind pass | Only the verifier uses `verify_model`; the report names both |
+| V8 | A claimed critical/high is refuted or confirmed by the cheap model | Claims in `verify_model_for` (default critical, high) go to `verify_model` |
+| V9 | The cheap verifier confirms a medium and raises it to high, so the PR blocks on the cheap model's word | The raised finding is verified again by `verify_model`, whose verdict stands |
+| V10 | That second verification can't run (budget, provider) | The finding is `unverified`, never confirmed: exit 2, not 1 |
+| V11 | `verify_model_for` names a severity that doesn't exist, so nothing goes to the strong model | Config error |
+| V12 | The report hides which model gave a verdict | Each finding carries `verified_by`, shown next to the verifier's text |

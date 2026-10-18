@@ -18,7 +18,9 @@ def sort_key(f: dict) -> tuple:
 
 def _models(m: dict) -> str:
     verify = m.get("verify_model") or m["model"]
-    return m["model"] if verify == m["model"] else f"{m['model']} (verifier {verify})"
+    if verify == m["model"]:
+        return m["model"]
+    return f"{m['model']} (verifier {verify} for {'/'.join(m.get('verify_model_for') or ['all'])})"
 
 
 def markdown(rep: dict, code: int) -> str:
@@ -53,7 +55,8 @@ def markdown(rep: dict, code: int) -> str:
             lines += ["", f"### {f['verdict']} · {sev} · {f['title']}", f"`{f['file']}:{f['line']}` · {f['pass']} pass",
                       "", f"**Scenario.** {f['failure_scenario']}", "", f"**Evidence.** {f['evidence']}"]
             if f.get("reasoning"):
-                lines += ["", f"**Verifier.** {f['reasoning']}"]
+                who = f" ({f['verified_by']})" if f.get("verified_by") else ""
+                lines += ["", f"**Verifier{who}.** {f['reasoning']}"]
     elif not m["aborted"]:
         lines += ["", "No findings."]
     for name, p in m["phases"].items():

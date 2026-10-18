@@ -17,6 +17,8 @@ class Config:
     model: str = "gpt-6.1-sol"
     # A cheaper `model` can do the blind and intent passes while this one refutes; defaults to `model`.
     verify_model: str | None = None
+    # Claims verify_model checks; the rest stay on `model`. Only these severities can block, so only these pay for it.
+    verify_model_for: tuple[str, ...] = ("critical", "high")
     reasoning_effort: str | None = "high"
     max_usd: float = 1.0
     max_steps: int = 40
@@ -44,9 +46,12 @@ def parse(text: str | None, root: Path) -> Config:
     unknown = set(raw) - known
     if unknown:
         raise ValueError(f"{FILE}: unknown keys {sorted(unknown)}")
-    for key in ("deny_paths", "secret_allowlist", "prices_per_mtok"):
+    for key in ("deny_paths", "secret_allowlist", "prices_per_mtok", "verify_model_for"):
         if key in raw:
             raw[key] = tuple(raw[key])
+    bad = set(raw.get("verify_model_for", ())) - {"critical", "high", "medium", "low"}
+    if bad:
+        raise ValueError(f"{FILE}: verify_model_for has unknown severities {sorted(bad)}")
     neighbours = []
     for n in raw.pop("neighbours", []):
         if set(n) != {"name", "path", "ref"}:

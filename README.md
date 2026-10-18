@@ -56,6 +56,7 @@ comes from the working-tree file it must be a remote-tracking ref (`origin/main`
 ```toml
 model = "openai/responses/gpt-6.1-sol"   # any LiteLLM model id
 verify_model = "openai/responses/gpt-6.1-sol"  # optional, defaults to `model`; see "Cost" below
+verify_model_for = ["critical", "high"]  # the default: claims verify_model checks, the rest stay on `model`
 reasoning_effort = "high"        # measured: "medium" missed findings that "high" caught
 max_usd = 1.0            # shared by all passes; each call reserves room first, overshoot is reported
 max_steps = 40           # per agent
@@ -81,6 +82,10 @@ Most of the cost is the blind pass: it walks the code for many steps and resends
 A cheap `model` for the passes with a strong `verify_model` for the refutation keeps most of the recall.
 Measured on four reviews with known answers: a model 10x cheaper alone found 2 of 3 known high findings
 at about a tenth of the cost; with the strong model as verifier, 3 of 3 were found at about a third.
+
+Each strong verification costs about as much as a cheap review, so `verify_model` checks only the claims that can
+block (`verify_model_for`). The cheap model verifies the rest, and when it raises a claim into a blocking severity, the
+strong model verifies that claim again from zero and its verdict stands. The report names the verifier of each finding.
 
 ## What leaves the machine
 
